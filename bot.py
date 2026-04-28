@@ -55,27 +55,25 @@ def get_all_groups():
 
 def is_admin(user_id: int) -> bool:
     if not ADMIN_IDS:
-        return True  # если список пуст — разрешаем всем (на старте)
+        return True
     return user_id in ADMIN_IDS
 
 
-# ─── Обработчики ───────────────────────────────────────────────
+# ─── Handlers ───────────────────────────────────────────────
 
 async def on_bot_added(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Бот добавлен в группу — сохраняем"""
     chat = update.effective_chat
     for member in update.message.new_chat_members:
         if member.id == context.bot.id:
-            save_group(chat.id, chat.title or "Без названия")
+            save_group(chat.id, chat.title or "Unnamed")
             await update.message.reply_text(
-                f"👋 Привет! Бот Monellyn подключён к группе *{chat.title}*.\n"
-                "Теперь вы будете получать уведомления от команды Monellyn.",
+                f"👋 Hello! Monellyn Bot has been connected to *{chat.title}*.\n"
+                "This group will now receive notifications from the Monellyn team.",
                 parse_mode="Markdown"
             )
 
 
 async def on_bot_removed(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Бот удалён из группы — убираем из базы"""
     chat = update.effective_chat
     for member in update.message.left_chat_member:
         if member.id == context.bot.id:
@@ -87,58 +85,55 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.effective_chat.type != "private":
         return
     await update.message.reply_text(
-        f"👋 Привет, {user.first_name}!\n\n"
-        "Я бот для рассылки уведомлений мерчантам Monellyn.\n\n"
-        "📋 *Команды:*\n"
-        "/broadcast <текст> — разослать сообщение во все группы\n"
-        "/groups — список подключённых групп\n"
-        "/myid — узнать свой Telegram ID",
+        f"👋 Hello, {user.first_name}!\n\n"
+        "I'm the Monellyn broadcast bot for sending notifications to all merchant groups.\n\n"
+        "📋 *Commands:*\n"
+        "/broadcast <message> — send a message to all groups\n"
+        "/groups — list all connected groups\n"
+        "/myid — get your Telegram ID",
         parse_mode="Markdown"
     )
 
 
 async def cmd_myid(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Показать свой ID"""
     user = update.effective_user
     await update.message.reply_text(
-        f"🆔 Ваш Telegram ID: `{user.id}`\n\n"
-        "Добавьте его в переменную `ADMIN_IDS` на Railway чтобы стать администратором.",
+        f"🆔 Your Telegram ID: `{user.id}`\n\n"
+        "Add it to the `ADMIN_IDS` variable on Railway to become an admin.",
         parse_mode="Markdown"
     )
 
 
 async def cmd_groups(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Список всех групп"""
     if update.effective_chat.type != "private":
         return
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("⛔ У вас нет доступа к этой команде.")
+        await update.message.reply_text("⛔ You don't have access to this command.")
         return
 
     groups = get_all_groups()
     if not groups:
-        await update.message.reply_text("📭 Бот ещё не добавлен ни в одну группу.")
+        await update.message.reply_text("📭 The bot hasn't been added to any groups yet.")
         return
 
-    text = f"📋 *Подключённые группы ({len(groups)}):*\n\n"
+    text = f"📋 *Connected groups ({len(groups)}):*\n\n"
     for chat_id, title in groups:
         text += f"• {title} (`{chat_id}`)\n"
     await update.message.reply_text(text, parse_mode="Markdown")
 
 
 async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Рассылка сообщения во все группы"""
     if update.effective_chat.type != "private":
-        await update.message.reply_text("⚠️ Команду /broadcast используйте только в личке с ботом.")
+        await update.message.reply_text("⚠️ Please use /broadcast only in a private chat with the bot.")
         return
 
     if not is_admin(update.effective_user.id):
-        await update.message.reply_text("⛔ У вас нет доступа к этой команде.")
+        await update.message.reply_text("⛔ You don't have access to this command.")
         return
 
     if not context.args:
         await update.message.reply_text(
-            "✏️ Укажите текст сообщения:\n`/broadcast Ваш текст здесь`",
+            "✏️ Please provide the message text:\n`/broadcast Your message here`",
             parse_mode="Markdown"
         )
         return
@@ -147,10 +142,10 @@ async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     groups = get_all_groups()
 
     if not groups:
-        await update.message.reply_text("📭 Нет подключённых групп для рассылки.")
+        await update.message.reply_text("📭 No connected groups to broadcast to.")
         return
 
-    status_msg = await update.message.reply_text(f"📤 Начинаю рассылку в {len(groups)} групп...")
+    status_msg = await update.message.reply_text(f"📤 Starting broadcast to {len(groups)} groups...")
 
     sent = 0
     failed = 0
@@ -160,26 +155,25 @@ async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             await context.bot.send_message(
                 chat_id=chat_id,
-                text=f"📢 *Уведомление от Monellyn:*\n\n{message_text}",
+                text=f"📢 *Notification from Monellyn:*\n\n{message_text}",
                 parse_mode="Markdown"
             )
             sent += 1
-            await asyncio.sleep(0.1)  # небольшая пауза чтобы не словить лимит
+            await asyncio.sleep(0.1)
         except Exception as e:
             failed += 1
             failed_groups.append(f"{title} ({chat_id}): {str(e)[:50]}")
-            # если бот кикнут — удаляем группу
             if "bot was kicked" in str(e) or "chat not found" in str(e):
                 remove_group(chat_id)
 
-    result = f"✅ Рассылка завершена!\n\n📨 Отправлено: {sent}/{len(groups)}"
+    result = f"✅ Broadcast complete!\n\n📨 Sent: {sent}/{len(groups)}"
     if failed_groups:
-        result += f"\n❌ Ошибки ({failed}):\n" + "\n".join(failed_groups[:5])
+        result += f"\n❌ Errors ({failed}):\n" + "\n".join(failed_groups[:5])
 
     await status_msg.edit_text(result)
 
 
-# ─── Запуск ────────────────────────────────────────────────────
+# ─── Run ────────────────────────────────────────────────────
 
 def main():
     init_db()
@@ -192,7 +186,7 @@ def main():
     app.add_handler(MessageHandler(filters.StatusUpdate.NEW_CHAT_MEMBERS, on_bot_added))
     app.add_handler(MessageHandler(filters.StatusUpdate.LEFT_CHAT_MEMBER, on_bot_removed))
 
-    print("🤖 Monellyn Bot запущен!")
+    print("🤖 Monellyn Bot started!")
     app.run_polling(drop_pending_updates=True)
 
 
